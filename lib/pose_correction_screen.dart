@@ -1,8 +1,10 @@
-// lib/pose_correction_screen.dart (Partial Update)
-
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart'; // Import the camera package
-import 'package:permission_handler/permission_handler.dart'; // Import permission handler
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+// NOTE: Add these two imports for the next step (MediaPipe)
+// import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+// import 'package:image/image.dart' as imglib;
 
 class PoseCorrectionScreen extends StatefulWidget {
   final String poseKey;
@@ -23,9 +25,9 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeCamera(); // Call the initialization function
+    _initializeCamera();
   }
-  
+
   // 2. Camera Initialization Function
   Future<void> _initializeCamera() async {
     // A. Check and Request Permission
@@ -34,7 +36,7 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
       setState(() {
         _feedbackMessage = "Camera permission denied. Cannot start correction.";
       });
-      return; // Stop if permission is denied
+      return;
     }
 
     // B. Get Available Cameras
@@ -43,23 +45,33 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
       setState(() {
         _feedbackMessage = "No camera found on this device.";
       });
-      return; 
+      return;
     }
-    
+
     // C. Initialize Controller (Using the front camera for self-correction)
     final frontCamera = _cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => _cameras.first // Fallback to any camera
+      (camera) => camera.lensDirection == CameraLensDirection.front,
+      orElse: () => _cameras.first,
     );
-    
+
     _cameraController = CameraController(
       frontCamera,
-      ResolutionPreset.medium, // Use medium resolution to save resources on your 6yr old laptop
-      enableAudio: false, // We don't need audio
+      // *** FIX 1: Resolution Preset ***
+      // LOW is the best choice to reduce automatic cropping/scaling and save resources
+      ResolutionPreset.low,
+      enableAudio: false,
+      // Explicitly using YUV420 for compatibility with ML Kit/MediaPipe core later
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
-    
+
     try {
       await _cameraController!.initialize();
+
+      // Ensure camera settings are optimal
+      if (_cameraController!.value.focusMode != null) {
+        await _cameraController!.setFocusMode(FocusMode.auto);
+      }
+
       setState(() {
         _isCameraInitialized = true;
         _feedbackMessage = "Camera Ready. Please assume the pose.";
@@ -73,7 +85,7 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
 
   @override
   void dispose() {
-    // 3. Dispose Controller on exit
+    // Dispose Controller on exit
     _cameraController?.dispose();
     super.dispose();
   }
@@ -81,7 +93,9 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
   @override
   Widget build(BuildContext context) {
     // 4. Build the UI based on initialization status
-    if (!_isCameraInitialized || _cameraController == null || !_cameraController!.value.isInitialized) {
+    if (!_isCameraInitialized ||
+        _cameraController == null ||
+        !_cameraController!.value.isInitialized) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.poseKey.toUpperCase())),
         body: Center(
@@ -90,28 +104,43 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 20),
-              Text(_feedbackMessage), // Show status message
+              Text(_feedbackMessage),
             ],
           ),
         ),
       );
     }
-    
+
     // 5. Camera View (when initialized)
+    final Size size = MediaQuery.of(context).size;
+    final double aspectRatio = _cameraController!.value.aspectRatio;
+
     return Scaffold(
       appBar: AppBar(title: Text(widget.poseKey.toUpperCase())),
       body: Stack(
         children: [
-          // Display the camera feed, wrapped in AspectRatio to handle orientation
+          // *** FIX 2: Correct Layout Transformation ***
+          // This setup ensures the camera feed covers the entire screen,
+          // handles the inherent 90-degree rotation of the stream, and
+          // avoids the zoomed/bulged effect by respecting the full field of view.
           Center(
-            child: AspectRatio(
-              aspectRatio: _cameraController!.value.aspectRatio,
-              child: CameraPreview(_cameraController!),
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: FittedBox(
+                fit: BoxFit.cover, // Ensure it fills the screen
+                child: SizedBox(
+                  // Swap width and height based on the controller's aspect ratio
+                  // to correct the rotation and maintain the full portrait view.
+                  width: size.width / aspectRatio,
+                  height: size.height / aspectRatio,
+                  child: CameraPreview(_cameraController!),
+                ),
+              ),
             ),
           ),
-          
-          // ... (Overlay for Skeleton and Feedback will go here)
 
+          // ... (Overlay for Skeleton and Feedback will go here)
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
