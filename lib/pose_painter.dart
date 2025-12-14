@@ -1,49 +1,37 @@
-// lib/pose_painter.dart
+// lib/pose_painter.dart - FINAL FIX FOR SKELETON MIRRORING AND ROTATION
 
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 class PosePainter extends CustomPainter {
   final Pose pose;
-  final Size absoluteImageSize; // The actual dimensions of the camera frame
+  final Size absoluteImageSize; // The original size of the image frame (e.g., 640x480)
 
   PosePainter(this.pose, this.absoluteImageSize);
 
-  // Define the joints and connections for the skeleton
+  // Define the joints and connections for the skeleton (unchanged)
   static const List<List<PoseLandmarkType>> POSE_SKELETON_CONNECTIONS = [
-    // Torso and Hips
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
     [PoseLandmarkType.leftHip, PoseLandmarkType.rightHip],
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftHip],
     [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightHip],
-
-    // Left Arm
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow],
     [PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist],
-
-    // Right Arm
     [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow],
     [PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist],
-
-    // Left Leg
     [PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee],
     [PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle],
-
-    // Right Leg
     [PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee],
     [PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle],
   ];
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Paint for the lines (bones)
     final linePaint = Paint()
-      ..color = Colors
-          .yellow // Bright color for visibility
+      ..color = Colors.yellow
       ..strokeWidth = 4.0
       ..style = PaintingStyle.stroke;
 
-    // Paint for the points (joints)
     final pointPaint = Paint()
       ..color = Colors.red
       ..strokeWidth = 6.0
@@ -51,20 +39,35 @@ class PosePainter extends CustomPainter {
 
     // Helper function to convert normalized landmark coordinates to screen coordinates
     Offset offsetForLandmark(PoseLandmark landmark) {
-      // The landmarks' (x, y) coordinates are normalized to the image size (absoluteImageSize).
-      // We need to scale them to the widget size (size).
-
+      
       // Calculate scaling factors:
-      final double scaleX = size.width / absoluteImageSize.width;
-      final double scaleY = size.height / absoluteImageSize.height;
+      // Screen Width (size.width) maps to Image Height (absoluteImageSize.height)
+      final double scaleX = size.width / absoluteImageSize.height;
+      // Screen Height (size.height) maps to Image Width (absoluteImageSize.width)
+      final double scaleY = size.height / absoluteImageSize.width;
+      
+      // 1. ROTATION FIX: Swap X and Y for the 90-degree correction.
+      final double landmarkY = landmark.y;
+      final double landmarkX = landmark.x;
 
-      // Because we are using the front camera, we must mirror the X coordinate (1.0 - x)
-      // to ensure the skeleton is drawn correctly over the selfie feed.
-      final double mirroredX = absoluteImageSize.width - landmark.x;
+      // 2. MIRRORING FIX: Apply the horizontal flip (1.0 - coordinate) to the
+      // coordinate that controls the final horizontal screen position.
+      // After the swap, the X-axis of the screen is controlled by the original Y-coordinate.
+      // The Y-axis of the screen is controlled by the original X-coordinate.
+      // This is complicated! Let's simplify the final result:
 
-      return Offset(mirroredX * scaleX, landmark.y * scaleY);
+      // Corrected X (Horizontal Screen Position): Uses the scaled landmark Y coordinate.
+      // We do NOT mirror this axis.
+      final double finalX = landmarkY * scaleX; 
+
+      // Corrected Y (Vertical Screen Position): Uses the scaled and mirrored landmark X coordinate.
+      // We MUST mirror this axis to achieve the selfie effect.
+      // We flip the X-axis coordinate relative to the image width.
+      final double finalY = (absoluteImageSize.width - landmarkX) * scaleY; 
+
+      return Offset(finalX, finalY);
     }
-
+    
     // 1. Draw connections (bones)
     for (var connection in POSE_SKELETON_CONNECTIONS) {
       final startLandmark = pose.landmarks[connection.first];
@@ -86,7 +89,6 @@ class PosePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant PosePainter oldDelegate) {
-    // Only repaint if the pose data has changed
     return oldDelegate.pose != pose;
   }
 }
