@@ -4,8 +4,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'pose_painter.dart';
 import 'dart:math';
-import 'dart:typed_data'; // NEW: Required for Uint8List
-import 'package:flutter/foundation.dart'; // NEW: Required for WriteBuffer
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 class PoseCorrectionScreen extends StatefulWidget {
   final String poseKey;
@@ -125,39 +125,30 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
     }
   }
 
-  // *** FIXED: Helper to convert CameraImage to InputImage (New ML Kit API) ***
   InputImage? _inputImageFromCameraImage(CameraImage image) {
     if (_cameraController == null ||
         _cameraController!.value.previewSize == null)
       return null;
 
-    // 1. Combine all image planes into a single buffer (required for YUV format)
     final WriteBuffer allBytes = WriteBuffer();
     for (Plane plane in image.planes) {
       allBytes.putUint8List(plane.bytes);
     }
     final bytes = allBytes.done().buffer.asUint8List();
 
-    // 2. Create the Metadata object (Renamed from InputImageData)
     final metadata = InputImageMetadata(
-      // *** FIX: Class RENAMED to InputImageMetadata ***
       size: Size(image.width.toDouble(), image.height.toDouble()),
-      rotation: InputImageRotation.rotation0deg, // Rotation is handled in UI
-      format: InputImageFormat.yuv420, // Must match the camera setting
-      bytesPerRow:
-          image.planes[0].bytesPerRow, // Critical for ML Kit processing
+      rotation: InputImageRotation.rotation0deg,
+      format: InputImageFormat.yuv420,
+      bytesPerRow: image.planes[0].bytesPerRow,
     );
 
-    // 3. Create the InputImage from the combined bytes and metadata
-    return InputImage.fromBytes(
-      bytes: bytes,
-      metadata: metadata, // *** FIX: Parameter RENAMED to metadata ***
-    );
+    return InputImage.fromBytes(bytes: bytes, metadata: metadata);
   }
 
   // Helper function to calculate angle (in degrees) between three landmarks
   double _getAngle(PoseLandmark p1, PoseLandmark v1, PoseLandmark p2) {
-    // This uses the Law of Cosines to calculate the angle at vertex v1.
+    // ... (Law of Cosines calculation remains the same) ...
     final a = sqrt(pow(v1.x - p2.x, 2) + pow(v1.y - p2.y, 2));
     final b = sqrt(pow(v1.x - p1.x, 2) + pow(v1.y - p1.y, 2));
     final c = sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2));
@@ -170,7 +161,7 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
     return acos(safeCosTheta) * (180 / pi);
   }
 
-  // *** NEW: The CORE CORRECTION LOGIC FUNCTION ***
+  // *** NEW: The CORE CORRECTION LOGIC FUNCTION (Remains the same) ***
   String _getCorrectionFeedback(Pose pose, String poseKey) {
     PoseLandmark? getLandmark(PoseLandmarkType type) => pose.landmarks[type];
 
@@ -207,7 +198,6 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
     }
 
     // Add logic for 'tree_pose' here
-
     return "Analyzing Pose...";
   }
 
@@ -220,7 +210,6 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (UI code remains the same) ...
     if (!_isCameraInitialized ||
         _cameraController == null ||
         !_cameraController!.value.isInitialized) {
@@ -244,42 +233,50 @@ class _PoseCorrectionScreenState extends State<PoseCorrectionScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.poseKey.toUpperCase())),
-      body: Stack(
+      body: Column(
         children: [
-          // Camera Feed with Zoom Fix
-          Center(
-            child: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: size.width / aspectRatio,
-                  height: size.height / aspectRatio,
-                  child: CameraPreview(_cameraController!),
+          // 75% Camera Preview and Skeleton Overlay
+          Expanded(
+            flex: 3, // 75%
+            child: Stack(
+              children: [
+                // *** FIX 1: Camera Feed to fill the entire 75% Stack area ***
+                // This replaces the complex Center/FittedBox/SizedBox structure.
+                Positioned.fill(
+                  child: FittedBox(
+                    fit: BoxFit.cover, // Ensures the camera image covers the whole area
+                    child: SizedBox(
+                      // Use the controller's aspect ratio for the inner size
+                      width: _cameraController!.value.aspectRatio,
+                      height: 1.0, 
+                      child: CameraPreview(_cameraController!),
+                    ),
+                  ),
                 ),
-              ),
+
+                // Overlay for Drawing Skeleton (must fill the 75% space)
+                if (_detectedPose != null &&
+                    _cameraController!.value.previewSize != null)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: PosePainter(
+                        _detectedPose!,
+                        _cameraController!.value.previewSize!,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
 
-          // Overlay for Drawing Skeleton (Visual Feedback)
-          if (_detectedPose != null &&
-              _cameraController!.value.previewSize != null)
-            Positioned.fill(
-              child: CustomPaint(
-                painter: PosePainter(
-                  _detectedPose!,
-                  _cameraController!.value.previewSize!,
-                ),
-              ),
-            ),
-
-          // Feedback Message
-          Align(
-            alignment: Alignment.bottomCenter,
+          // 25% Feedback Message Area
+          Expanded(
+            flex: 1, // 25%
             child: Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(16),
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black, // Solid black for readability
+              alignment: Alignment.center,
               child: Text(
                 _feedbackMessage,
                 style: const TextStyle(color: Colors.white, fontSize: 18),
